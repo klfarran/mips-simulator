@@ -9,6 +9,7 @@
 		
 		public: 
 			PipReg();
+			void moveto(PipReg dest);
 
 			string get_instruction();
 			uint32_t get_PC();

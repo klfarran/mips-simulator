@@ -8,7 +8,7 @@
 	//creates an empty pipeline register 
 	//control wires all start at 0 (off) by default
 	PipReg::PipReg(){
-		instruction = NULL;
+		instruction = "";
 		PC = 0x00000000;
 		ALU_Result = 0;
 		Mem_Op_Value = 0;
@@ -18,6 +18,20 @@
 		alusrc = 0;
 		regdst = 0;
 		regwrite = 0;
+	}
+	
+	//copy all fields of this pipeline register to the dest pipeline register 
+	void moveto(PipReg dest) {
+		dest.set_instruction(instruction);
+		dest.set_PC(PC);
+		dest.set_ALU_Result(ALU_Result);
+		dest.set_Mem_Op_Value(Mem_Op_Value);
+		dest.set_memtoreg(memtoreg);
+		dest.set_memwrite(memwrite);
+		dest.set_branch(branch);
+		dest.set_alusrc(alusrc);
+		dest.set_regdst(regdst);
+		dest.set_regwrite(regwrite);
 	}
 	
 

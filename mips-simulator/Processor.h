@@ -3,6 +3,7 @@
 #include "PipReg.h"
 #include <string>
 #include <vector> 
+#include <cstdint>
 
 	using namepsace std; 
 	
@@ -58,10 +59,11 @@
 				
 		
 		private:
-			string PC;
+			uint32_t PC;
+			uint32_t fetch_reg;
 			vector<int> Memory;
 			vector<int> Register_File;
-			vector<int> Instruction_Mem;	
+			vector<uint32_t> Instruction_Mem;	
 			PipReg IF_ID;
 			PipReg ID_EX;
 			PipReg EX_MEM;

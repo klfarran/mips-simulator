@@ -2,7 +2,7 @@
 #include "PipReg.h"
 #include <string>
 #include <vector>
-#include <stdexcept> 
+#include <cstdint>
 
 	using namespace std;
 
@@ -26,6 +26,7 @@
 		
 		//initialized to be empty. will be loaded in by the 'OS' when the user provides an input file
 		Instruction_Mem = {};
+		fetch_reg = 0;
 	}
 	
 	//set instruction memory upon loading of a new program 
@@ -292,7 +293,7 @@
 	void Processor::determine_r_type(string instruction) {
 	 // cout << instruction << endl;
 	  if (instruction.substr(26, 6) == "100000")
-		Add(instruction);
+		add(instruction);
 	  else if (instruction.substr(26, 6) == "100100")
 		And(instruction);
 	  else if (instruction.substr(26, 6) == "001000")
@@ -417,7 +418,7 @@
 	  //cout << "lui";
 	 unsigned int shifted_imm = get_immediate(instruction.substr(16, 16)) << 16;
 	  if(get_reg(instruction.substr(11, 5)) != 0) { 
-	  Register_File[get_reg(instruction.substr(11, 5))] = shifted_imm;
+		Register_File[get_reg(instruction.substr(11, 5))] = shifted_imm;
 		}
 	  }
 
@@ -428,7 +429,7 @@
 	void Processor::lw(string instruction) { 
 	  //cout << "lw";  
 	  if(get_reg(instruction.substr(11, 5)) != 0) {
-	 Register_File[get_reg(instruction.substr(11, 5))] = memory[(Register_File[get_reg(instruction.substr(6, 5))] + get_immediate(instruction.substr(16,16)))/4];
+		Register_File[get_reg(instruction.substr(11, 5))] = memory[(Register_File[get_reg(instruction.substr(6, 5))] + get_immediate(instruction.substr(16,16)))/4];
 		}
 	  }
 
@@ -520,34 +521,55 @@
 	
 	
 	
-	//cycle through instructions and shoot them at the pipeline
+	//simulate one tick of the clock
 	void Processor::Tick() {
 		//loop through instruction mem and shoot each one at IF 
 		//make sure memeory is ASCIIz'd and all that - give you space for evetrything you allocate in the beginning
 		//make PC whatever address the first instruction is at 
 		//$gp points to those things like stack 
 		
-		/* 
-		Each tick, these things need to happen: 
+		
+		//Simulate each pipe stage 
+		IF();
+		ID();
+		EX();
+		MEM();
+		WB();
 			
-			1. Make 5 calls: IF(); ID(IF_ID); EX(ID_EX); .... note that if a pip reg is empty, that stage should just return back 
-				*note that IF "fetches" the next instruction at the current PC, so we don't need a seperate step for that*
-			
-			2. Previously fetched instructions move forward one stage (pipeline regs "swap") 
-				IF → ID
-				ID → EX
-				EX → MEM
-				MEM → WB
-			*need to be careful here, only non-empty pipregs should be moved to the next pip reg* (just an if statement) 
-			
-			3. PC = PC+4; (or the branch target?) 
-		*/
+		/* Update pipeline registers 
+			IF → ID
+			ID → EX
+			EX → MEM
+			MEM → WB 
+		//needs to be done in reverse order to avoid over-writing data that's been worked on in the 5 stages above */
+		
+		EX_MEM.moveto(MEM_WB);
+		ID_EX.moveto(EX_MEM);
+		IF_ID.moveto(ID_EX);			
+		IF_ID.set_instruction(fetch_reg);
+		
+		// 3. PC = PC+4; (or the branch target? i dont think so, i think thats handled in ex/mem stages.... some stage at least) 
+		PC = PC + 4;
 	}
 	
 	//a version of Tick() which interupts and prints out processor state info at the end of each tick
 	void Processor::Tick_Debug() {
 		
+		// Simulate each pipe stage 
+		IF();
+		ID();
+		EX();
+		MEM();
+		WB();
 		
+		// Update pipeline registers 
+		EX_MEM.moveto(MEM_WB);
+		ID_EX.moveto(EX_MEM);
+		IF_ID.moveto(ID_EX);			
+		IF_ID.set_instruction(fetch_reg);
+		
+		
+		// Print debug info
 		cout << "PC: " << PC << endl; 
 		cout << "IF: " << endl;
 		cout << "ID: " << endl;
@@ -562,52 +584,67 @@
 		char cont;
 		cont = cin.get();
 		
+		//Update PC 
 		PC = PC+4; 		
 	}
 	
 	/*pipeline stage functions*/
 	
 	void Processor::IF() {
-		//get instruction from instruction mem at PC
-		string instruction = Instruction_Mem[PC];
-		/*CHANGE THIS PC IS NOW A STRING */PC = PC + 4;
-		Id(PipReg(instruction));
-		
+		//get instruction from instruction mem at PC (really PC/4 to simulate byte-addressable addrs)
+		fetch_reg = Instruction_Mem[PC/4];
 	}
 	
 	void Processor::ID() {
-		//get instruction out of the pipeline register
-		string instruction = IF_ID.get_instruction();
+		//need to ask if there is an instruction to be decoded in the case of a pipeline cold start
+		if(If_ID.get_instruction() != "") {
 		
-		
-		//break open the instruction, get operand values 
-		
-		//is this instruction a syscall? see if it looks like 0000000c: 
-		if (instruction.substr(26, 6) == "001100") 
-				PipReg.set_opcode("syscall");  
-		//else, determine the type of instruction based on the opcode: 
-		else if (instruction.substr(0, 6) == "000000"){ // R-type
-			if(get_reg(instruction.substr(16, 5)) != 0) //check if $rd is $zero, if so silently ignore attempts to change the $zero register
-				determine_r_type(instruction);
-		}
-		else if (instruction.substr(0, 6) == "000010" || instruction.substr(0, 6) == "000011")  // J-type
-			determine_j_type(instruction);	
-		else  // I-type
-			determine_i_type(instruction);
+			//get instruction out of the pipeline register
+			string instruction = IF_ID.get_instruction();
 			
-			//NEED TO DO CONTROL WIRES because they tell if youyre writing, reading, etc, for later stages 
+			//break open the instruction, get operand values 
+			
+			//is this instruction a syscall? see if it looks like 0000000c: 
+			if (instruction.substr(26, 6) == "001100") 
+					PipReg.set_opcode("syscall");  
+			//else, determine the type of instruction based on the opcode: 
+			else if (instruction.substr(0, 6) == "000000"){ // R-type
+				if(get_reg(instruction.substr(16, 5)) != 0) //check if $rd is $zero, if so silently ignore attempts to change the $zero register
+					determine_r_type(instruction);
+			}
+			else if (instruction.substr(0, 6) == "000010" || instruction.substr(0, 6) == "000011")  // J-type
+				determine_j_type(instruction);	
+			else  // I-type
+				determine_i_type(instruction);
+				
+				//add opcode, registers, etc to the ID_EX register 
+				//PLAN: edit the three 'determine' functions to be passed a few reference params which will be updated accordingly during the call (opcdode, imm, etc) 
+				
+				//set control wires 
+				
+		}	
 	}
 	
 	void Processor::EX() {
+		//check for cold start
+		if(ID_EX.get_instruction() != "") { 
+		
+		}
 		
 	}
 	
 	void Processor::MEM() {
+		//check for cold start
+		if(EX_MEM.get_instruction() != "") { 
 		
+		}
 	} 
 	
 	void Processor::WB() {
+		//check for cold start
+		if(MEM_WB.get_instruction() != "") { 
 		
+		}
 	}
 
 
